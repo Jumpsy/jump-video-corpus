@@ -1,6 +1,7 @@
 name: video-finder
 on:
-  schedule: [{ cron: "*/30 * * * *" }]
+  schedule:
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 permissions:
   contents: write
@@ -14,27 +15,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip install -U yt-dlp
-      - name: Search shard ${{ matrix.shard }}
+      - name: search shard
         run: |
           : > shard.jsonl
           awk -v s=${{ matrix.shard }} 'NR % 20 == s % 20' queries.txt | while IFS= read -r q; do
             [ -z "$q" ] && continue
-            yt-dlp --flat-playlist --no-warnings -I "1:400" \
+            yt-dlp --flat-playlist --no-warnings -I "1:500" \
               --print '{"id":"%(id)s","views":%(view_count)j,"dur":%(duration)j,"title":%(title)j}' \
-              "ytsearch400:$q" 2>/dev/null >> shard.jsonl || true
+              "ytsearch500:$q" 2>/dev/null >> shard.jsonl || true
           done
           echo "shard ${{ matrix.shard }}: $(wc -l < shard.jsonl) rows"
       - uses: actions/upload-artifact@v4
-        with: { name: shard-${{ matrix.shard }}, path: shard.jsonl }
+        with:
+          name: shard-${{ matrix.shard }}
+          path: shard.jsonl
   merge:
     needs: search
     runs-on: ubuntu-latest
-    permissions: { contents: write }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: { path: shards }
-      - name: Merge + dedup into found.jsonl
+        with:
+          path: shards
+      - name: merge and dedup
         run: |
           cat found.jsonl shards/*/shard.jsonl 2>/dev/null | python3 -c "
           import sys,json
@@ -45,10 +48,12 @@ jobs:
               if d.get('id'): seen[d['id']]=json.dumps(d)
             except: pass
           open('found.jsonl','w').write('\n'.join(seen.values())+'\n')
-          print('total unique videos:', len(seen))
+          print('total unique:', len(seen))
           "
-      - name: Commit
+      - name: commit
         run: |
-          git config user.name finder; git config user.email finder@bot
-          git add found.jsonl && git commit -m "found: $(wc -l < found.jsonl) videos" || echo "no change"
+          git config user.name finder
+          git config user.email finder@bot
+          git add found.jsonl
+          git commit -m "found $(wc -l < found.jsonl) videos" || echo "no change"
           git push || (git pull --rebase -X ours && git push)
