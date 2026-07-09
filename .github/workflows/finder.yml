@@ -1,0 +1,39 @@
+name: video-finder
+on:
+  schedule: [{ cron: "*/30 * * * *" }]   # every 30 min
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -U yt-dlp
+      - name: Search YouTube → harvest found videos
+        run: |
+          touch found.jsonl
+          while IFS= read -r q; do
+            [ -z "$q" ] && continue
+            yt-dlp --flat-playlist --no-warnings -I "1:200" \
+              --print '{"id":"%(id)s","views":%(view_count)j,"dur":%(duration)j,"title":%(title)j,"q":"'"$q"'"}' \
+              "ytsearch200:$q" 2>/dev/null >> new.jsonl || true
+          done < queries.txt
+          # merge + dedup by id
+          cat found.jsonl new.jsonl 2>/dev/null | python3 -c "
+          import sys,json
+          seen={}
+          for l in sys.stdin:
+            try:
+              d=json.loads(l); 
+              if d.get('id'): seen[d['id']]=l.strip()
+            except: pass
+          print('\n'.join(seen.values()))
+          " > merged.jsonl
+          mv merged.jsonl found.jsonl; rm -f new.jsonl
+          echo "found.jsonl now has $(wc -l < found.jsonl) videos"
+      - name: Commit
+        run: |
+          git config user.name "finder"; git config user.email "finder@bot"
+          git add found.jsonl && git commit -m "found: $(wc -l < found.jsonl) videos" || echo "no changes"
+          git push || (git pull --rebase && git push)
