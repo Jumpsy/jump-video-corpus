@@ -1,0 +1,29 @@
+name: scrapling-youtube-test
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Scrapling + browser
+        run: |
+          pip install -U "scrapling[fetchers]"
+          python -m playwright install chromium --with-deps || true
+          scrapling install || true
+      - name: Can Scrapling stealth-fetch YouTube from GitHub's IP?
+        run: |
+          python - <<'PY'
+          import re
+          from scrapling.fetchers import StealthyFetcher, PlayWrightFetcher
+          url = "https://www.youtube.com/watch?v=2byPP_9F0-Q"
+          for name, F in [("Stealthy", StealthyFetcher), ("PlayWright", PlayWrightFetcher)]:
+              try:
+                  p = F.fetch(url, headless=True, network_idle=False, timeout=45000)
+                  html = str(getattr(p, "html_content", "") or getattr(p, "body", "") or "")
+                  title = re.search(r'<title>([^<]+)</title>', html)
+                  views = re.search(r'"viewCount":"(\d+)"', html)
+                  bot = "not a bot" in html.lower() or "sign in to confirm" in html.lower()
+                  print(f"{name}: status={getattr(p,'status','?')} title={title.group(1)[:50] if title else None} views={views.group(1) if views else None} bot_wall={bot}")
+              except Exception as e:
+                  print(f"{name}: ERROR {e}")
+          PY
