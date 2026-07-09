@@ -1,0 +1,15 @@
+name: youtube-ip-test
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install yt-dlp
+        run: pip install -U yt-dlp
+      - name: Can GitHub's IP scrape YouTube?
+        run: |
+          echo "=== search test ==="
+          yt-dlp --flat-playlist -I "1:5" --print "%(view_count)s | %(title)s" "ytsearch5:marketing hook" 2>&1 | head -6
+          echo "=== single-video metadata test ==="
+          yt-dlp --print "%(view_count)s views, %(duration)ss, %(title)s" "https://www.youtube.com/watch?v=2byPP_9F0-Q" 2>&1 | head -3
